@@ -1,0 +1,174 @@
+---
+title: "数据标准化"
+author: "Adam"
+date: "2025-07-11"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Load packages
+```{r}
+if (!requireNamespace("pacman", quietly = TRUE)) install.packages("pacman")
+pacman::p_load(
+  arrow,
+  tidyverse
+)
+```
+
+# meta_raw_20250714
+
+## read data 
+```{r}
+raw_data <- read_parquet('meta_raw_20250714.parquet')
+# write.csv(raw_data, file = 'meta_raw_20250714.csv', row.names = FALSE) # for GPT Reading
+```
+
+## data cleaning
+```{r}
+raw_data_filtered <- raw_data %>%
+  mutate(
+    biomarker = ifelse(!is.na(raw_pat_biomaker) & raw_pat_biomaker != "", raw_pat_biomaker, raw_sub_pat_biomaker),
+    disease_name = ifelse(!is.na(raw_disease_name) & raw_disease_name != "", raw_disease_name, raw_sub_disease_name),
+    pathology = ifelse(!is.na(raw_pat_pathology) & raw_pat_pathology != "", raw_pat_pathology, raw_sub_pat_pathology),
+    stage = ifelse(!is.na(raw_pat_stage) & raw_pat_stage != "", raw_pat_stage, raw_sub_pat_stage),
+    baseline = ifelse(!is.na(raw_pat_base_lines) & raw_pat_base_lines != "", raw_pat_base_lines, raw_sub_pat_base_lines)
+  ) %>%
+  # Remove the specified columns
+  select(
+    pmid = data_source_url,
+    disease_name,
+    biomarker,
+    pathology,
+    stage,
+    baseline,
+    country_region = raw_country_region,
+    epid_index = raw_epid_index,
+    publisher = data_source_publisher,
+    real_stat_dt,
+    survey_start_dt,
+    survey_end_dt,
+    data_source_year,
+  ) %>%
+  distinct()
+```
+
+## data split
+```{r}
+# 替换括号内内容为占位符，返回替换后字符串和括号内容列表
+protect_parentheses <- function(x) {
+  matches <- str_match_all(x, "\\([^()]*\\)")[[1]]
+  out <- x
+  protects <- list()
+  if (nrow(matches) > 0) {
+    for (i in seq_len(nrow(matches))) {
+      key <- paste0("__PROTECT_", i, "__")
+      protects[[key]] <- matches[i,1]
+      out <- sub(fixed(matches[i,1]), key, out, fixed = TRUE)
+    }
+  }
+  list(str = out, protects = protects)
+}
+
+# 还原占位符为括号内容
+restore_parentheses <- function(x, protects) {
+  for (key in names(protects)) {
+    x <- str_replace_all(x, fixed(key), protects[[key]])
+  }
+  x
+}
+
+# 拆分函数，适用于disease_name, biomarker, pathology, stage, epid_index
+split_field <- function(val) {
+  if (is.na(val) | val == "") return(NA_character_)
+  protected <- protect_parentheses(val)
+  splits <- str_split(protected$str, "\\s*&&\\s*|\\s*\\|\\|\\s*")[[1]]
+  splits <- str_trim(splits)
+  splits <- map_chr(splits, ~restore_parentheses(.x, protected$protects))
+  splits
+}
+
+# baseline 拆分函数
+split_baseline <- function(val) {
+  if (is.na(val) | val == "") return(NA_character_)
+  str_split(val, "\\s*&&\\s*")[[1]] %>% str_trim()
+}
+
+# 需要检查的字段
+fields_to_check <- c("disease_name", "biomarker", "pathology", "stage", "baseline")
+
+# 删除“&&”数>=3的行（raw_country_region除外）
+raw_data_clean <- raw_data_filtered %>%
+  filter(
+    rowSums(sapply(select(., all_of(fields_to_check)), function(x) str_count(x, "&&") >= 3), na.rm = TRUE) == 0
+  )
+
+# country_region拆分函数
+split_country <- function(val) {
+  if (is.na(val) | val == "") return(NA_character_)
+  str_split(val, "\\|\\|")[[1]] %>% str_trim()
+}
+
+expand_split_rows <- function(df) {
+  df %>%
+    mutate(
+      baseline_list = map(baseline, split_baseline),
+      disease_name_list = map(disease_name, split_field),
+      biomarker_list = map(biomarker, split_field),
+      pathology_list = map(pathology, split_field),
+      stage_list = map(stage, split_field),
+      epid_index_list = map(epid_index, split_field),
+      country_region_list = map(country_region, split_country)  # 新增country_region拆分
+    ) %>%
+    select(
+      -baseline, -disease_name, -biomarker, -pathology, -stage, -epid_index, -country_region
+    ) %>%
+    unnest_longer(baseline_list) %>%
+    unnest_longer(disease_name_list) %>%
+    unnest_longer(biomarker_list) %>%
+    unnest_longer(pathology_list) %>%
+    unnest_longer(stage_list) %>%
+    unnest_longer(epid_index_list) %>%
+    unnest_longer(country_region_list) %>%          # 新增country_region展开
+    rename(
+      baseline = baseline_list,
+      disease_name = disease_name_list,
+      biomarker = biomarker_list,
+      pathology = pathology_list,
+      stage = stage_list,
+      epid_index = epid_index_list,
+      country_region = country_region_list
+    )
+}
+
+# 应用
+result_data <- raw_data_clean %>%
+  expand_split_rows() %>%
+  mutate(country_region = if_else(country_region == "Country required", NA_character_, country_region))
+```
+
+# meta_raw_join_clean
+
+## read data
+```{r}
+raw_data1 <- read_parquet('meta_raw_join_clean.parquet')
+```
+
+
+
+# shiny data
+```{r}
+data_latest <- result_data
+
+# write.csv(data_latest, file = 'data_20250715.csv', row.names = FALSE) # for data import in GPT
+
+write_parquet(data_latest,'data/data_latest.parquet')
+```
+
+
+
+
+
+

@@ -1,0 +1,21 @@
+- version: "流病数据增量动态看板 v1.0"
+  date: "2025/07/17"
+  notes: "初始化版本"
+  maintainer: "Adam"
+- version: "流病数据增量动态看板 v1.1"
+  date: "2025/07/18"
+  notes: |
+    改动：
+    1. 数据总览版块新增总数据量和总发行方数统计
+    2. 新增版本日志与留言板版块，用autoupdate_log_sqlite统一管理
+    3. 优化数据更新记录版块的算法
+  maintainer: "Adam"
+- version: "流病数据增量动态看板 v1.2"
+  date: "2025/07/18"
+  notes: |
+    改进：
+    1. 优化数据总览版块视觉呈现与渲染速度
+    2. 将运行shinyapp所需所有必要数据与组件均内置读取
+    3. 新增version_log.yaml，格式化记录版本改动
+  maintainer: "Adam"
+-
