@@ -47,29 +47,3 @@ po/*~
 
 # RStudio Connect folder
 rsconnect/
-
-# ===============================
-# 🚀 Project-specific ignores
-# ===============================
-
-# Data outputs (keep folder structure but ignore files)
-data/latest/*
-!data/latest/.gitkeep
-
-data/processed/*
-!data/processed/.gitkeep
-
-data/exports/*
-!data/exports/.gitkeep
-
-# Runtime database (Shiny)
-shinyapp/runtime/*.sqlite
-
-# Temporary / intermediate files
-*.csv
-*.parquet
-*.json
-*.xlsx
-
-# Logs
-*.log
