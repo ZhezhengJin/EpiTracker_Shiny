@@ -8,12 +8,12 @@ pacman::p_load(shiny,shinydashboard,shinydashboardPlus,
 options(jsonlite.simplifyVector = TRUE)
 
 # Source internal files ---------------------------------------------------
-source("shinyapp/mod_overview.R", local = TRUE)
-source("shinyapp/mod_table.R",    local = TRUE)
-source("shinyapp/mod_autoupdate.R",    local = TRUE)
-source("shinyapp/mod_search.R",   local = TRUE)
-source("shinyapp/mod_version_log.R",   local = TRUE)
-source("shinyapp/mod_message_board.R",   local = TRUE)
+source("shinyapp/modules/mod_overview.R", local = TRUE)
+source("shinyapp/modules/mod_table.R",    local = TRUE)
+source("shinyapp/modules/mod_autoupdate.R",    local = TRUE)
+source("shinyapp/modules/mod_search.R",   local = TRUE)
+source("shinyapp/modules/mod_version_log.R",   local = TRUE)
+source("shinyapp/modules/mod_message_board.R",   local = TRUE)
 source("shinyapp/app_ui.R",       local = TRUE)
 source("shinyapp/app_server.R",   local = TRUE)
 
