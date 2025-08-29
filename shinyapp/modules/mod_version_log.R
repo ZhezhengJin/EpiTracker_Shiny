@@ -1,5 +1,5 @@
 # 读取yaml
-version_log <- read_yaml("configs/version_log.yaml")
+version_log <- yaml::read_yaml("configs/version_log.yaml")
 
 # 转为tibble/data.frame
 version_log_df <- bind_rows(version_log)

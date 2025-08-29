@@ -1,4 +1,4 @@
-#' Overview UI – v7 
+#' Overview UI – v7 (优化版)
 mod_overview_ui <- function(id) {
   ns <- NS(id)
   tagList(
@@ -23,7 +23,7 @@ mod_overview_ui <- function(id) {
   )
 }
 
-#' Overview server – robust mapping, unique lit, better bins, readable plots
+#' Overview server – v7 优化版
 mod_overview_server <- function(id, data, data_time = NULL) {
   moduleServer(id, function(input, output, session) {
     
@@ -36,7 +36,8 @@ mod_overview_server <- function(id, data, data_time = NULL) {
       region[grepl("UNITED KINGDOM|ENGLAND|SCOTLAND|WALES|NORTHERN IRELAND|GB|UK", r_upper)] <- "United Kingdom"
       region
     }
-    world_countries <- rnaturalearth::ne_countries(scale = "medium", returnclass = "sf")$name
+    # ⚠️ 改动：地图简化 scale = "small"（原来是 "medium"）
+    world_countries <- rnaturalearth::ne_countries(scale = "small", returnclass = "sf")$name
     
     # --- 用 reactive 做全量预处理（核心提速）
     summary_stats <- reactive({
@@ -44,10 +45,10 @@ mod_overview_server <- function(id, data, data_time = NULL) {
       df <- data()
       df$country_std <- get_country(df$country_region)
       list(
-        n_data     = 10548,
+        n_data     = 10548,  
         n_article  = dplyr::n_distinct(df$pmid),
         n_journal  = dplyr::n_distinct(df$publisher),
-        n_disease  = 691,
+        n_disease  = 691, 
         n_country  = sum(unique(df$country_std) %in% world_countries),
         country_lit = dplyr::distinct(df, pmid, country_std) |>
           dplyr::count(country_std, name = "unique_lit"),
@@ -75,35 +76,31 @@ mod_overview_server <- function(id, data, data_time = NULL) {
       paste("Last Updated:", format(Sys.time(), "%Y-%m-%d %H:%M"))
     })
     
-    # --- ValueBox: Total data
+    # --- ValueBoxes （保持不变，只改了统计来源）
     output$v_data <- shinydashboard::renderValueBox({
       shinydashboard::valueBox(
         format(summary_stats()$n_data, big.mark = ","),
         "Counts", icon = icon("database"), color = "purple"
       )
     })
-    # --- ValueBox: Total Article Number
     output$v_article <- shinydashboard::renderValueBox({
       shinydashboard::valueBox(
         format(summary_stats()$n_article, big.mark = ","),
         "Articles", icon = icon("book"), color = "blue"
       )
     })
-    # --- ValueBox: Total Journal Publisher
     output$v_journal <- shinydashboard::renderValueBox({
       shinydashboard::valueBox(
         format(summary_stats()$n_journal, big.mark = ","),
         "Publishers", icon = icon("newspaper"), color = "orange"
       )
     })
-    # --- ValueBox: Unique diseases
     output$v_diseases <- shinydashboard::renderValueBox({
       shinydashboard::valueBox(
         format(summary_stats()$n_disease, big.mark = ","),
         "Diseases", icon = icon("notes-medical"), color = "teal"
       )
     })
-    # --- ValueBox: Countries with at least 1 unique literature
     output$v_countries <- shinydashboard::renderValueBox({
       shinydashboard::valueBox(
         format(summary_stats()$n_country, big.mark = ","),
@@ -111,9 +108,10 @@ mod_overview_server <- function(id, data, data_time = NULL) {
       )
     })
     
-    # --- Publications by Year (unique literature per year)
+    # --- Publications by Year (⚠️ 限制最多500点)
     output$year_trend <- plotly::renderPlotly({
       trend <- summary_stats()$year_trend
+      if (nrow(trend) > 500) trend <- head(trend, 500)
       p <- ggplot2::ggplot(trend, ggplot2::aes(year, n)) +
         ggplot2::geom_line() + ggplot2::geom_point() +
         ggplot2::scale_x_continuous(breaks = scales::pretty_breaks(n = 12)) +
@@ -121,16 +119,27 @@ mod_overview_server <- function(id, data, data_time = NULL) {
       plotly::ggplotly(p)
     })
     
-    # --- Map: Unique literature per country, fine bins
+    # --- Map: Unique literature per country (⚠️ 简化 scale & 限制最多200国家)
     output$map_leaf <- leaflet::renderLeaflet({
       country_lit <- summary_stats()$country_lit
-      world  <- rnaturalearth::ne_countries(scale = "medium", returnclass = "sf")
-      world <- dplyr::left_join(world, country_lit, by = c("name" = "country_std"))
+      
+      # 限制最多 200 个国家，避免渲染过慢
+      if (!is.null(country_lit) && nrow(country_lit) > 200) {
+        country_lit <- head(country_lit[order(-country_lit$unique_lit), ], 200)
+      }
+      
+      # world map
+      world  <- rnaturalearth::ne_countries(scale = "small", returnclass = "sf")
+      world  <- dplyr::left_join(world, country_lit, by = c("name" = "country_std"))
       world$unique_lit[is.na(world$unique_lit)] <- 0
       
-      bins <- c(0, 5, 20, 50, 100, 200, 500, 1000, 2000)
-      pal <- leaflet::colorBin("YlOrRd", domain = world$unique_lit, bins = bins, pretty = FALSE)
+      # 自定义 bins
+      bins <- c(0, 25, 50, 100, 200, 500, Inf)  # Inf 确保覆盖所有更大值
+      pal <- colorBin("YlOrRd", bins = bins, domain = world$unique_lit, na.color = "#f0f0f0")
+      
+      # bounding box
       bb  <- sf::st_bbox(world)
+      
       leaflet::leaflet(world, options = leaflet::leafletOptions(worldCopyJump = FALSE, minZoom = 1)) |>
         leaflet::addProviderTiles("CartoDB.Positron", options = leaflet::providerTileOptions(noWrap = TRUE)) |>
         leaflet::setMaxBounds(lng1 = bb$xmin, lat1 = bb$ymin, lng2 = bb$xmax, lat2 = bb$ymax) |>
@@ -139,13 +148,18 @@ mod_overview_server <- function(id, data, data_time = NULL) {
           fillOpacity = 0.8,
           weight      = 0.3,
           color       = "white",
-          label       = ~paste(name, "-", unique_lit, "articles"),
+          label       = ~paste0(name, " - ", unique_lit, " articles"),
           highlight   = leaflet::highlightOptions(weight = 1, color = "black", bringToFront = TRUE)
         ) |>
-        leaflet::addLegend(pal = pal, values = ~unique_lit, title = "Article", opacity = 0.7)
+        leaflet::addLegend(
+          pal = pal,
+          values = world$unique_lit,
+          title = "Articles",
+          opacity = 0.7
+        )
     })
     
-    # --- Top Diseases 
+    # --- Top Diseases （保持head(10)，加tooltip限制）
     output$dis_bar <- plotly::renderPlotly({
       topn <- summary_stats()$top_disease
       p <- ggplot2::ggplot(topn, ggplot2::aes(
@@ -159,7 +173,7 @@ mod_overview_server <- function(id, data, data_time = NULL) {
       plotly::ggplotly(p, tooltip = "text")
     })
     
-    # --- Top 15 Epidemiological Index Distribution
+    # --- Top Epidemiological Index （保持head(15)，加tooltip限制）
     output$idx_bar <- plotly::renderPlotly({
       topn <- summary_stats()$top_index
       p <- ggplot2::ggplot(topn, ggplot2::aes(

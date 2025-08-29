@@ -13,100 +13,105 @@ mod_search_ui <- function(id) {
                                          "Stage" = "stage"),
                              selected = "disease_name"),
                  checkboxInput(ns("and_mode"), "Use AND between words", value = TRUE),
-                 hr(), # 横线
+                 hr(),
                  tags$div(style = "margin-top: 20px;"), 
-                 # quick stats
-                 valueBoxOutput(ns("v_found"), width = 12)
+                 shinycssloaders::withSpinner(valueBoxOutput(ns("v_found"), width = 12), type = 6)
     ),
     mainPanel(width = 9,
               tabsetPanel(id = ns("tabs"),
-                          tabPanel("List", reactable::reactableOutput(ns("kw_tbl")))
+                          tabPanel("List", shinycssloaders::withSpinner(reactable::reactableOutput(ns("kw_tbl")), type = 6))
               )
     )
   )
 }
 
-#' Keyword Explorer Server – v5
+#' Keyword Explorer Server – v7 (优化 + 加载动画)
 mod_search_server <- function(id, data) {
   moduleServer(id, function(input, output, session) {
     
-    # --- helper: token‑based filter -------------------------------------
+    # token_based filter
     token_filter <- function(df, column, keyword, and_mode = TRUE) {
-      if (is.null(keyword) || keyword == "") return(df[0, ])
+      if (is.null(keyword) || keyword == "") return(df[0, , drop = FALSE])
       tokens <- unlist(strsplit(keyword, "\\s+"))
-      pattern_vec <- paste0("(?i)", tokens) # case‑insensitive
-      hits <- sapply(pattern_vec, function(pt) grepl(pt, df[[column]], ignore.case = TRUE))
+      # guards
+      if (length(tokens) == 0) return(df[0, , drop = FALSE])
+      hits <- sapply(tokens, function(pt) grepl(pt, df[[column]], ignore.case = TRUE))
+      # if only one token, sapply returns vector -> coerce to matrix
+      if (is.vector(hits)) hits <- matrix(hits, ncol = 1)
       keep <- if (and_mode) apply(hits, 1, all) else apply(hits, 1, any)
-      df[keep, ]
+      df[keep, , drop = FALSE]
     }
     
-    # reactive filtered data ---------------------------------------------
     filt <- reactive({
       req(input$kw)
-      token_filter(data(), input$field, trimws(input$kw), input$and_mode)
+      df <- data()
+      if (is.null(df) || nrow(df) == 0) return(df[0, , drop = FALSE])
+      token_filter(df, input$field, trimws(input$kw), input$and_mode)
     })
     
-    # quick stats ---------------------------------------------------------
+    # valueBox (server must only assign renderValueBox)
     output$v_found <- shinydashboard::renderValueBox({
-      shinydashboard::valueBox(nrow(filt()), "Records Found", icon = icon("search"))
+      shinydashboard::valueBox(
+        value = nrow(filt()),
+        subtitle = "Records Found",
+        icon = icon("search")
+      )
     })
     
-    # summary table (always exclude search field column)
-    output$kw_tbl <- reactable::renderReactable({
-      req(nrow(filt()) > 0)
+    # summary precompute reactive
+    filt_summary <- reactive({
+      df <- filt()
+      # ensure df exists
+      if (is.null(df) || nrow(df) == 0) {
+        return(data.frame(Field = "No matches", Unique_Values = "", stringsAsFactors = FALSE))
+      }
+      
       cols_all <- c("disease_name", "biomarker", "baseline", "pathology", "stage", "country_region")
       search_field <- input$field
-      # 只保留除搜索字段外的列
       cols <- setdiff(cols_all, search_field)
-      
       col_map <- c(
-        disease_name = "Disease",
-        biomarker = "Biomarker",
-        baseline = "Baseline",
-        pathology = "Pathology",
-        stage = "Stage",
+        disease_name   = "Disease",
+        biomarker      = "Biomarker",
+        baseline       = "Baseline",
+        pathology      = "Pathology",
+        stage          = "Stage",
         country_region = "Country/Region"
       )
       
-      lst <- lapply(cols, function(cl) {
-        vals <- unique(filt()[[cl]])
+      uniq_vals <- vapply(cols, function(cl) {
+        vals <- unique(df[[cl]])
         vals <- vals[!is.na(vals) & nzchar(as.character(vals))]
         vals <- sort(as.character(vals))
+        if (length(vals) > 200) vals <- c(head(vals, 200), "... (truncated)")
         paste(vals, collapse = ";; ")
-      })
+      }, FUN.VALUE = character(1))
       
-      # Calculate Survey Range (min start, max end)
-      s_start <- suppressWarnings(as.numeric(filt()$survey_start_dt))
-      s_end   <- suppressWarnings(as.numeric(filt()$survey_end_dt))
-      survey_range <- if (all(is.na(s_start)) & all(is.na(s_end))) {
-        ""
+      # survey range
+      s_start <- suppressWarnings(as.numeric(df$survey_start_dt))
+      s_end   <- suppressWarnings(as.numeric(df$survey_end_dt))
+      if (all(is.na(s_start)) && all(is.na(s_end))) {
+        survey_range <- ""
       } else {
-        paste0(
-          min(s_start, s_end, na.rm = TRUE), " - ",
-          max(s_start, s_end, na.rm = TRUE)
-        )
+        survey_range <- paste0(min(c(s_start, s_end), na.rm = TRUE), " - ", max(c(s_start, s_end), na.rm = TRUE))
       }
       
-      fields_label <- unname(col_map[cols])
-      summary_tbl <- data.frame(
-        Field = c(fields_label, "Survey Range"),
-        Unique_Values = c(unlist(lst), survey_range),
+      data.frame(
+        Field = c(unname(col_map[cols]), "Survey Range"),
+        Unique_Values = c(unname(uniq_vals), survey_range),
         stringsAsFactors = FALSE
       )
-      
+    })
+    
+    # render reactable (server only assigns render)
+    output$kw_tbl <- reactable::renderReactable({
+      df_sum <- filt_summary()
       reactable::reactable(
-        summary_tbl,
+        df_sum,
         columns = list(
           Field = reactable::colDef(name = "Field", width = 200),
-          Unique_Values = reactable::colDef(
-            name = "Unique Values",
-            html = TRUE,
-            width = 1000,
-            style = list(whiteSpace = "pre-wrap")
-          )
+          Unique_Values = reactable::colDef(name = "Unique Values", width = 800, style = list(whiteSpace = "pre-wrap"))
         ),
         sortable = FALSE,
-        filterable = FALSE,
         pagination = FALSE,
         compact = TRUE,
         minRows = 1

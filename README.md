@@ -9,29 +9,34 @@ EpiTracker 是一个基于 **R + Shiny (shinydashboardPlus)** 的流行病学文
 - **日志与留言板**：基于 SQLite 的持久化存储，支持多人协作与历史追溯  
 - **版本管理**：版本日志由外部 `yaml` 文件维护，可直接在前端展示  
 
-详细升级内容见 [configs/version_log.yaml] 
+详细升级内容见 [shinyapp/configs/version_log.yaml] 
 
 ---
 
 ## 📂 项目结构
 ```bash
 EpiTracker-Project/
-├── configs/                  # 配置与版本日志 (version_log.yaml)
+├── shinyapp/
+|   ├── app.R                  # Shiny 应用入口
+|   ├── runtime/               # 运行时数据库 (autoupdate_log.sqlite)
+|   ├── configs/               # 配置文件 (version_log.yaml)
+|   ├── rsconnnect/            # RStudio Connect 部署脚本
+|   ├── app_data/              # 部署app所需的数据文件
+|   └── modules/
+│      ├── mod_overview.R
+│      ├── mod_table.R
+│      ├── mod_search.R
+│      ├── mod_autoupdate.R
+│      ├── mod_version_log.R
+│      └── mod_message_board.R
 ├── data/
-│   ├── raw/                  # 原始数据 (meta_raw_*.parquet)
-│   ├── processed/            # 清洗结果
-│   ├── latest/               # 最新快照 (.RData)
-│   └── exports/              # 导出给 GPT/外部系统的文件
-├── docs/                     # 文档与 SOP (Data_clean_SOP.Rmd)
-├── prompts/                  # Prompt 设计与实验
-├── shinyapp/                 # Shiny 应用主目录
-│   ├── app.R                 # 应用入口
-│   ├── app_server.R
-│   ├── app_ui.R
-│   ├── modules/              # 模块化功能 (overview, table, search, update, log, message_board)
-│   └── runtime/              # 运行时数据库 (autoupdate_log.sqlite)
-├── README.md                 # 项目说明
-└── EpiTracker.Rproj          # RStudio 工程文件
+│   ├── raw                    # 原始数据 (meta_raw_*.parquet)
+│   ├── processed              # 清洗脚本 (Data_clean_SOP.Rmd)
+│   ├── lastest                # 最新数据快照 (data_latest.parquet)
+│   └── exports                # 导出sample数据
+├── docs/                      # 数据处理SOP.rmd
+├── prompts/                   # 用于生成初版shinyapp的Prompt 
+└── README.md                  # 项目说明
 ```
 
 ---
@@ -96,14 +101,6 @@ shiny::runApp("shinyapp")
 
 ### 留言板 (Message Board)
 - SQLite 持久化留言，支持多用户并发  
-
----
-
-## 📖 历史版本
-- v1.0 (2025-07-17) 初始版本  
-- v1.1 (2025-07-18) 数据总览版块新增总数据量、优化数据更新记录版块的算法等  
-- v1.2 (2025-07-19) 新增数据总览优化、Shiny 模块重构等  
-- v1.3 (2025-08-29) 重构并补充项目框架、同步上传至 GitHub  
 
 ---
 
